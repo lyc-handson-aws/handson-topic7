@@ -1,0 +1,474 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+## =================== DESCRIPTION =================== ##
+Description: >-
+  A Cloudformation Stack for building a restful application where
+  user can send a post request to create a new item with a name(string), a amount(number), a email adress(string),
+  user can send a get request to get all items created,
+  application save the items in a database,
+  application reduce periodically the amount of all existing items in the DB,
+  when the number of a item is 0, it will be deleted from DB,
+  when an item is removed from DB, a email will be sent for notifying the user.
+    - Amazon API Gateway
+    - AWS Lambda
+    - Amazon Dynamodb
+    - AWS Step Functions
+    - Amazon EventBridge
+    - Amazon SES
+  After stack is launched and finished, User need to :
+   1. go to the Amazon SES page to complete the email adresse and email domain verification
+   2. use postman or browser to test the application
+
+## ===================== METADATA ===================== ##
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Tag parameters for all tagable resources
+        Parameters:
+          - paramUniqueTagName
+          - paramUniqueTagValue
+      - Label:
+          default: Email configuration
+        Parameters:
+          - paramEmailAddr
+          - paramEmailDomain
+
+## ==================== PARAMETERS ==================== ##
+Parameters:
+  paramUniqueTagName:
+    Type: String
+    Default: 'yuanchao-handson-tag'
+    Description: unique tag for all resources defined in this stack Cloudformation
+  paramUniqueTagValue:
+    Type: String
+    Description: unique tag's value
+  paramEmailAddr:
+    Type: String
+    Description: email adresse to sending notification in application
+  paramEmailDomain:
+    Type: String
+    Description: email domain used in application
+
+## ==================== MAPPINGS ==================== ##
+#Mappings:
+
+
+## ==================== CONDITIONS ==================== ##
+# Conditions:
+
+## =================== RESOURCES =================== ##
+Resources:
+
+  MySESEmailIdAddr:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref paramEmailAddr
+
+  MySESEmailIdDomain:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref paramEmailDomain
+
+
+  myDynamoDBTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties:
+      TableName: !Sub 'dynamo-${paramUniqueTagValue}'
+      AttributeDefinitions:
+      - AttributeType: "S"
+        AttributeName: "PetName"
+      - AttributeType: "S"
+        AttributeName: "Owner"
+      BillingMode: "PROVISIONED"
+      ProvisionedThroughput:
+        WriteCapacityUnits: 5
+        ReadCapacityUnits: 5
+      KeySchema:
+      - KeyType: "HASH"
+        AttributeName: "Owner"
+      - KeyType: "RANGE"
+        AttributeName: "PetName"
+      TableClass: "STANDARD"
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+
+  myScheduleLFRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: 
+             - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub 'policy-${paramUniqueTagValue}-schedulerlf'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ses:*"
+                  - "dynamodb:*"
+                Resource:
+                 - !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${paramEmailDomain}' 
+                 - !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${paramEmailAddr}'
+                 - !GetAtt myDynamoDBTable.Arn
+      ManagedPolicyArns:
+         - 'arn:aws:iam::aws:policy/service-role/AWSLambdaDynamoDBExecutionRole'
+         - 'arn:aws:iam::aws:policy/AWSLambdaExecute'
+
+
+  myScheduleLF:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt myScheduleLFRole.Arn
+      Runtime: python3.9
+      Handler: food_reducer.lambda_handler
+      Code:
+        S3Bucket: s3bucket-handson-topic1
+        S3Key: food_reducer.zip
+      Environment:
+        Variables:
+          TABLE: !Ref myDynamoDBTable
+          EMAIL: !Ref paramEmailAddr
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+
+
+  mySchedulerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: "sts:AssumeRole"
+            Principal:
+              Service: "scheduler.amazonaws.com"
+      Policies:
+        - PolicyName: !Sub 'policy-${paramUniqueTagValue}-scheduler'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Resource:
+                 - !Sub "${myScheduleLF.Arn}:*"
+                 - !Sub "${myScheduleLF.Arn}"
+                Action:
+                 - "lambda:InvokeFunction"
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+
+  myScheduler:
+    Type: "AWS::Scheduler::Schedule"
+    Properties:
+      Name: !Sub 'schedule-${paramUniqueTagValue}'
+      GroupName: "default"
+      ScheduleExpression: "rate(2 minutes)"
+      Target:
+        Arn: !GetAtt myScheduleLF.Arn
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 3
+        RoleArn: !GetAtt mySchedulerRole.Arn
+      State: "DISABLED"
+      FlexibleTimeWindow:
+        Mode: "OFF"
+
+  myStepFunctionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: "sts:AssumeRole"
+            Principal:
+              Service: "states.amazonaws.com"
+      Policies:
+        - PolicyName: !Sub 'policy-${paramUniqueTagValue}-statmachine'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Resource: 
+                 - !Sub "${myScheduler.Arn}:*"
+                 - !Sub "${myScheduler.Arn}"
+                Action: 
+                 - "scheduler:GetSchedule"
+                 - "scheduler:UpdateSchedule"
+                 - "scheduler:ListSchedules"
+                 - "scheduler:GetScheduleGroup"
+              - Effect: Allow
+                Resource: "arn:aws:iam::*:role/*"
+                Action:
+                 - "iam:PassRole"
+                Condition: 
+                  StringLike: 
+                     iam:PassedToService: "scheduler.amazonaws.com"
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+                
+
+  myStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName:  !Sub 'statemachine-${paramUniqueTagValue}'
+      DefinitionString: |-
+       {
+         "Comment": "A description of my state machine",
+         "StartAt": "GetScheduleBefore",
+         "States": {
+           "GetScheduleBefore": {
+             "Type": "Task",
+             "Parameters": {
+               "Name.$": "$.SchedulerName"
+             },
+             "Resource": "arn:aws:states:::aws-sdk:scheduler:getSchedule",
+             "Next": "ActivateSchedule"
+           },
+           "ActivateSchedule": {
+             "Type": "Task",
+             "Parameters": {
+               "State": "ENABLED",
+               "FlexibleTimeWindow": {
+                 "Mode.$": "$.FlexibleTimeWindow.Mode"
+               },
+               "Name.$": "$.Name",
+               "ScheduleExpression.$": "$.ScheduleExpression",
+               "Target": {
+                 "Arn.$": "$.Target.Arn",
+                 "RoleArn.$": "$.Target.RoleArn"
+               }
+             },
+             "ResultPath": null,
+             "Resource": "arn:aws:states:::aws-sdk:scheduler:updateSchedule",
+             "Next": "Wait"
+           },
+           "Wait": {
+             "Type": "Wait",
+             "Seconds": 600,
+             "Next": "DeactivateSchedule"
+           },
+           "DeactivateSchedule": {
+             "Type": "Task",
+             "End": true,
+             "Parameters": {
+               "State": "DISABLED",
+               "FlexibleTimeWindow": {
+                 "Mode.$": "$.FlexibleTimeWindow.Mode"
+               },
+               "Name.$": "$.Name",
+               "ScheduleExpression.$": "$.ScheduleExpression",
+               "Target": {
+                 "Arn.$": "$.Target.Arn",
+                 "RoleArn.$": "$.Target.RoleArn"
+               }
+             },
+             "Resource": "arn:aws:states:::aws-sdk:scheduler:updateSchedule"
+           }
+         }
+       }
+      RoleArn: !GetAtt myStepFunctionRole.Arn
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+
+  myApiLFRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: 
+             - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: !Sub 'policy-${paramUniqueTagValue}-apilf'
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "states:*"
+                Resource: !Sub "${myStateMachine.Arn}"
+              - Effect: Allow
+                Action:
+                  - "dynamodb:*"
+                Resource:
+                 - !Sub "${myDynamoDBTable.Arn}" 
+      ManagedPolicyArns:
+         - 'arn:aws:iam::aws:policy/AWSLambdaExecute'
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+
+  myApiLF:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt myApiLFRole.Arn
+      Runtime: python3.9
+      Handler: api_lambda.lambda_handler
+      Code:
+        S3Bucket: s3bucket-handson-topic1
+        S3Key: api_lambda.zip
+      Environment:
+        Variables:
+          SCHEDULE: !Ref myScheduler
+          STEPFUNTIONSMARN: !GetAtt myStateMachine.Arn
+          TABLE: !Ref myDynamoDBTable
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+
+  myAGCloudWatchLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - apigateway.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: ApiGatewayLogsPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:DescribeLogGroups
+            - logs:DescribeLogStreams
+            - logs:PutLogEvents
+            - logs:GetLogEvents
+            - logs:FilterLogEvents
+            Resource: "*"
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+
+  myAGAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt myAGCloudWatchLogsRole.Arn
+
+
+  myAGRestApi:
+    Type: "AWS::ApiGateway::RestApi"
+    Properties:
+      EndpointConfiguration:
+        Types:
+        - "REGIONAL"
+      Name: !Sub 'api-${paramUniqueTagValue}'
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+
+
+  #myAGModel:
+  #   Type: AWS::ApiGateway::Model
+  #   Properties:
+  #     ContentType: "application/json"
+  #     RestApiId: !Ref myApiLF
+  #     Schema: {}
+  
+  myAGResource:
+     Type: AWS::ApiGateway::Resource
+     Properties:
+       ParentId: !GetAtt myAGRestApi.RootResourceId
+       PathPart: "pets"
+       RestApiId: !Ref myAGRestApi
+
+  myAGApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - apigateway.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: ApiGatewayLogsPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Resource:
+            - !Sub "${myApiLF.Arn}:*"
+            - !Sub "${myApiLF.Arn}"
+            Action:
+             - "lambda:InvokeFunction"
+
+  myAGPostMethod:
+     Type: AWS::ApiGateway::Method
+     Properties:
+       ApiKeyRequired: false
+       AuthorizationType: NONE
+       HttpMethod: POST
+       Integration:
+         ConnectionType: INTERNET
+         Credentials: !GetAtt myAGApiRole.Arn
+         IntegrationHttpMethod: POST
+         TimeoutInMillis: 29000
+         Type: AWS_PROXY
+         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${myApiLF.Arn}/invocations"
+       ResourceId: !Ref myAGResource
+       RestApiId: !Ref myAGRestApi
+
+  myAGGetMethod:
+     Type: AWS::ApiGateway::Method
+     Properties:
+       ApiKeyRequired: false
+       AuthorizationType: NONE
+       HttpMethod: GET
+       Integration:
+         ConnectionType: INTERNET
+         Credentials: !GetAtt myAGApiRole.Arn
+         IntegrationHttpMethod: POST
+         TimeoutInMillis: 29000
+         Type: AWS_PROXY
+         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${myApiLF.Arn}/invocations"
+       ResourceId: !Ref myAGResource
+       RestApiId: !Ref myAGRestApi
+
+  myAGDeployment:
+    DependsOn: [myAGPostMethod, myAGGetMethod]
+    Type: "AWS::ApiGateway::Deployment"
+    Properties:
+      RestApiId: !Ref myAGRestApi
+      Description: "prod"
+
+  myAGStage:
+    Type: "AWS::ApiGateway::Stage"
+    Properties:
+      RestApiId: !Ref myAGRestApi
+      DeploymentId: !GetAtt  myAGDeployment.DeploymentId
+      StageName: "prod"
+      CacheClusterSize: "0.5"
+      Tags:
+      - Key: !Ref paramUniqueTagName
+        Value: !Ref paramUniqueTagValue
+
+## ======================= OUTPUT ====================== ##
+#Outputs:

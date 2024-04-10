@@ -1,0 +1,38 @@
+name: Upload Lambda Python function to S3
+
+on: 
+  workflow_dispatch:
+  push:
+    paths:
+      - 'lf/**'
+      - '.github/workflows/action-lf.yaml'
+
+env:
+  STACKS_BUCKET: s3bucket-handson-topic1
+
+jobs:
+  cf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - uses: montudor/action-zip@v1
+        with:
+          args: zip -j -qq api_lambda.zip lf/api_lambda.py
+      - uses: montudor/action-zip@v1
+        with:
+          args: zip -j -qq food_reducer.zip lf/food_reducer.py
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-3
+
+      - name: Upload stack to S3
+        run: |
+          aws s3 cp api_lambda.zip s3://$STACKS_BUCKET/api_lambda.zip
+          aws s3 cp food_reducer.zip s3://$STACKS_BUCKET/food_reducer.zip
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: 'eu-west-3'
