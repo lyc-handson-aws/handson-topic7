@@ -1,15 +1,14 @@
-# Topic 6 - Restful application with Database
+# Topic 7 - RESTful application(API) using Database(DynamoDB+SES+ApiGateway+StepFunctions+Eventbridge+Lambda)
 ## Yuanchao Hands-on Project
 
-
-## This readme is more readable  [here](https://github.com/lyc-handson-aws/handson-topic6)
+## This readme is more readable [here](https://github.com/lyc-handson-aws/handson-topic7)
 
 
 
 ## **Overview**
 
 **Project's main features**
-:point_right: A Restful application "Pets storage shop"
+:point_right: A RESTful application "Pets storage shop"
 
 :point_right: people can store their pet in this shop, by providing foods for their pets
 
@@ -28,7 +27,7 @@
 
 :point_right: if there is no enough food for a pet, unfortunately, the pet will die due to the lack of food. when it happens, shop will notify the owner by email. so a new place is made in shop.
 
-:point_right: once a pet gets used to the environment, he will stay forever healthily in shop
+:point_right: once a pet gets used to the environment, it can stay forever healthily in shop
 
 :point_right: call this API via this URL: you can do it either via postman or browser 
 
@@ -41,10 +40,10 @@ the diagram below illustrates the architecture(principle) of this project:
 
 
 ## Continue Deployment
-CloudFormation stack's deployment: see GitHub workflows https://github.com/lyc-handson-aws/handson-topic6/blob/main/.github/workflows/action-cf.yaml
+CloudFormation stack's deployment: see GitHub workflows https://github.com/lyc-handson-aws/handson-topic7/blob/main/.github/workflows/action-cf.yaml
 
 ## **CloudFormation Stack Quick-create Link**
-Click here to quickly create a same project with the same AWS resources:  [here](https://eu-west-3.console.aws.amazon.com/cloudformation/home?region=eu-west-3#/stacks/create/review?templateURL=https://s3bucket-handson-topic1.s3.eu-west-3.amazonaws.com/CF-template-handson-topic6.yaml)
+Click here to quickly create a same project with the same AWS resources:  [here](https://eu-west-3.console.aws.amazon.com/cloudformation/home?region=eu-west-3#/stacks/create/review?templateURL=https://s3bucket-handson-topic1.s3.eu-west-3.amazonaws.com/CF-template-handson-topic7.yaml)
 **See Stack's description for complete actions to reproduce the same project**
 
 There
@@ -58,14 +57,14 @@ Project's AWS resources:
 
 :point_right: AWS::DynamoDB::Table - define a DynamoDB table for store the data of application
 
- :point_right: AWS::Lambda::Function- define 2 functions. one for receiving restful request from Api Gateway and write in DB, one is triggered by scheduler(Event bridge) for modifying in DB and send notification(email), if condition is satisfied
+ :point_right: AWS::Lambda::Function- define 2 functions. one for receiving RESTful request from Api Gateway and write in DB, one is triggered by scheduler(Event bridge) for modifying in DB and send notification(email), if condition is satisfied
 
 :point_right:AWS::Scheduler::Schedule - A Event bridge Scheduler set to launch periodically a Lambda function
 
 :point_right: AWS::StepFunctions::StateMachine - A workflow for controlling when the scheduler is enable/disable => some logics of applications are not activated when there is no activity after a while
 
 :point_right: AWS::ApiGateway
-- AWS::ApiGateway::RestApi - define a API type restful
+- AWS::ApiGateway::RestApi - define a API type RESTful
 - AWS::ApiGateway::Resource - define a API resource : path, type 
 - AWS::ApiGateway::Method - define 2 methods for our API resource: Get,Post
 - AWS::ApiGateway::Stage - define API's stages, one can have multiple stages. here we have only one stage: PROD
