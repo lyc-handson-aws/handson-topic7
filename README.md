@@ -8,6 +8,7 @@
 ## **Overview**
 
 **Project's main features**
+
 :point_right: A RESTful application "Pets storage shop"
 
 :point_right: people can store their pet in this shop, by providing foods for their pets
@@ -33,6 +34,19 @@
 
 
 
+## What could be learned in this topic:
+
+1. How to use and configure SES Email Identity.
+2. How to create a DynamoDB Table, understand Primary keys (Partition key/sort key), and Secondary indexes.
+3. How to use and configure a simple EventBridge Scheduler
+4. How to use and define a StepFunctions' StateMachine, understand StateMachine workflows, and how to debug them.
+5. How to define an API Gateway with different API stages, API deployments, API methods, and API resources.
+6. How to associate Lambda functions with an API Gateway and manage parameters/requests between them.
+7. How to use and configure Lambda functions.
+8. How to code, manipulate, and implement the above resources in Lambda functions (Python) using the AWS Python library
+
+
+
 ## **Architecture**
 the diagram below illustrates the architecture(principle) of this project:
 
@@ -40,7 +54,7 @@ the diagram below illustrates the architecture(principle) of this project:
 
 
 ## Continue Deployment
-CloudFormation stack's deployment: see GitHub workflows https://github.com/lyc-handson-aws/handson-topic7/blob/main/.github/workflows/action-cf.yaml
+CloudFormation stack's deployment: see GitHub workflows https://github.com/lyc-handson-aws/handson-topic7/blob/master/.github/workflows/action-cf.yaml
 
 ## **CloudFormation Stack Quick-create Link**
 Click here to quickly create a same project with the same AWS resources:  [here](https://eu-west-3.console.aws.amazon.com/cloudformation/home?region=eu-west-3#/stacks/create/review?templateURL=https://s3bucket-handson-topic1.s3.eu-west-3.amazonaws.com/CF-template-handson-topic7.yaml)
